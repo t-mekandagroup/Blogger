@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Simple Facebook Reel and video downloader powered by RapidAPI.">
+  <title>ReelGrab — Facebook Reel Downloader</title>
+  <style>
+    *{box-sizing:border-box}
+    :root{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color-scheme:dark}
+    body{margin:0;min-height:100vh;background:radial-gradient(circle at 50% 0%,#263b69 0,#111827 38%,#070b14 100%);color:#f8fafc}
+    .wrap{width:min(940px,92%);margin:auto}
+    header{padding:24px 0}
+    .brand{font-size:21px;font-weight:800;letter-spacing:-.5px}
+    .brand span{color:#60a5fa}
+    main{padding:60px 0 80px;text-align:center}
+    .badge{display:inline-flex;padding:7px 12px;border:1px solid #334155;border-radius:999px;background:#111827aa;color:#93c5fd;font-size:13px}
+    h1{font-size:clamp(38px,7vw,72px);line-height:.98;letter-spacing:-3px;margin:22px auto 18px;max-width:850px}
+    .sub{color:#aebbd0;font-size:17px;max-width:650px;margin:0 auto 34px;line-height:1.6}
+    .card{max-width:760px;margin:auto;padding:10px;border:1px solid #334155;border-radius:22px;background:#111827cc;box-shadow:0 25px 80px #0008;backdrop-filter:blur(16px)}
+    .form{display:flex;gap:10px}
+    input{min-width:0;flex:1;border:0;outline:0;border-radius:15px;background:#0b1220;color:white;padding:17px;font-size:15px}
+    button{border:0;border-radius:15px;padding:0 24px;background:#2563eb;color:white;font-weight:800;font-size:15px;cursor:pointer}
+    button:hover{background:#3b82f6}
+    button:disabled{opacity:.55;cursor:not-allowed}
+    .status{display:none;text-align:left;margin:18px 8px 4px;padding:14px;border-radius:14px;background:#0b1220;color:#cbd5e1}
+    .status.show{display:block}
+    .status.error{color:#fecaca;border:1px solid #7f1d1d}
+    .result{display:none;text-align:left;margin-top:18px;padding:20px;border:1px solid #334155;border-radius:18px;background:#0b1220}
+    .result.show{display:block}
+    .result h2{margin:0 0 8px;font-size:20px}
+    pre{white-space:pre-wrap;word-break:break-word;color:#94a3b8;font-size:12px;max-height:280px;overflow:auto}
+    .download{display:inline-block;margin-top:8px;text-decoration:none;background:#16a34a;color:white;padding:12px 17px;border-radius:12px;font-weight:800}
+    .note{margin-top:20px;color:#8190a8;font-size:12px;line-height:1.6}
+    footer{border-top:1px solid #1e293b;padding:25px 0;color:#64748b;font-size:12px;text-align:center}
+    @media(max-width:620px){main{padding-top:35px}.form{flex-direction:column}button{height:52px}.card{padding:8px}h1{letter-spacing:-2px}}
+  </style>
+</head>
+<body>
+  <header><div class="wrap"><div class="brand">Reel<span>Grab</span></div></div></header>
+
+  <main>
+    <div class="wrap">
+      <div class="badge">⚡ Fast • Simple • Mobile Friendly</div>
+      <h1>Download Facebook Reels & Videos</h1>
+      <p class="sub">Paste a public Facebook Reel or video URL below. The server securely sends the URL to your configured RapidAPI service.</p>
+
+      <section class="card">
+        <form class="form" id="downloadForm">
+          <input id="url" type="url" placeholder="Paste Facebook Reel URL here..." autocomplete="off" required>
+          <button id="submitBtn" type="submit">Get Video</button>
+        </form>
+
+        <div id="status" class="status"></div>
+        <div id="result" class="result">
+          <h2>API Response</h2>
+          <div id="downloadArea"></div>
+          <pre id="json"></pre>
+        </div>
+      </section>
+
+      <p class="note">Use this tool only for content you are allowed to download. Availability depends on Facebook access restrictions and the RapidAPI service.</p>
+    </div>
+  </main>
+
+  <footer>© <span id="year"></span> ReelGrab</footer>
+
+<script>
+const form = document.getElementById("downloadForm");
+const input = document.getElementById("url");
+const button = document.getElementById("submitBtn");
+const statusBox = document.getElementById("status");
+const result = document.getElementById("result");
+const jsonBox = document.getElementById("json");
+const downloadArea = document.getElementById("downloadArea");
+document.getElementById("year").textContent = new Date().getFullYear();
+
+function status(message, error=false){
+  statusBox.textContent = message;
+  statusBox.className = "status show" + (error ? " error" : "");
+}
+
+function findUrls(value, out=[]){
+  if (!value || typeof value !== "object") return out;
+  if (Array.isArray(value)) {
+    for (const x of value) findUrls(x,out);
+    return out;
+  }
+  for (const [key,val] of Object.entries(value)) {
+    if (typeof val === "string" && /^https?:\/\//i.test(val)) {
+      const lower = key.toLowerCase();
+      if (lower.includes("url") || lower.includes("download") || lower.includes("play") || lower.includes("video")) out.push(val);
+    } else if (val && typeof val === "object") findUrls(val,out);
+  }
+  return [...new Set(out)];
+}
+
+form.addEventListener("submit", async (e)=>{
+  e.preventDefault();
+  const url = input.value.trim();
+  if (!url) return;
+
+  button.disabled = true;
+  button.textContent = "Fetching…";
+  result.classList.remove("show");
+  downloadArea.innerHTML = "";
+  jsonBox.textContent = "";
+  status("Contacting downloader API…");
+
+  try {
+    const response = await fetch("/api/download", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({url})
+    });
+
+    const payload = await response.json();
+    if (!response.ok || payload.success === false) {
+      throw new Error(payload.error || "Download request failed.");
+    }
+
+    result.classList.add("show");
+    jsonBox.textContent = JSON.stringify(payload.data, null, 2);
+
+    const urls = findUrls(payload.data);
+    if (urls.length) {
+      const link = document.createElement("a");
+      link.className = "download";
+      link.href = urls[0];
+      link.target = "_blank";
+      link.rel = "noopener";
+      link.textContent = "⬇ Open Download";
+      downloadArea.appendChild(link);
+      status("Video data received. Use the download button below.");
+    } else {
+      status("API responded, but no obvious video URL was detected. Check the API response below.");
+    }
+  } catch (err) {
+    status(err.message || "Something went wrong.", true);
+  } finally {
+    button.disabled = false;
+    button.textContent = "Get Video";
+  }
+});
+</script>
+</body>
+</html>
